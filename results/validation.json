@@ -1,0 +1,11 @@
+{
+  "environment_cell_sha256": "c48bdb65d1e25cfd1a55578c01510126165000d1619622d0a7ed3538319f463e",
+  "notebook_code_cells_executed": 9,
+  "training_runs": 9,
+  "training_episodes": 270000,
+  "evaluation_episodes": 8100,
+  "pytest_passed": 6,
+  "saved_policy_replay": "passed",
+  "report_pages": 2,
+  "submission_zip_files": 2
+}
