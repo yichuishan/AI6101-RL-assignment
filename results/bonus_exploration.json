@@ -1,0 +1,99 @@
+{
+  "methods": [
+    "epsilon_greedy",
+    "ucb",
+    "greedy"
+  ],
+  "seeds": [
+    7,
+    17,
+    27
+  ],
+  "episodes": 30000,
+  "eval_episodes": 300,
+  "ucb_c": 20,
+  "epsilon_reference_reused": true,
+  "rows": [
+    {
+      "seed": 7,
+      "method": "epsilon_greedy",
+      "first_success": 9131,
+      "train_success_last2000": 0.6045,
+      "eval_success": 1.0,
+      "eval_return": 577.0,
+      "source": "identical mandatory clean-training run (reused)"
+    },
+    {
+      "seed": 7,
+      "method": "ucb",
+      "first_success": 5106,
+      "train_success_last2000": 1.0,
+      "eval_success": 1.0,
+      "eval_return": 577.0,
+      "source": "new independent training run"
+    },
+    {
+      "seed": 7,
+      "method": "greedy",
+      "first_success": 5127,
+      "train_success_last2000": 1.0,
+      "eval_success": 1.0,
+      "eval_return": 577.0,
+      "source": "new independent training run"
+    },
+    {
+      "seed": 17,
+      "method": "epsilon_greedy",
+      "first_success": 8038,
+      "train_success_last2000": 0.5935,
+      "eval_success": 1.0,
+      "eval_return": 577.0,
+      "source": "identical mandatory clean-training run (reused)"
+    },
+    {
+      "seed": 17,
+      "method": "ucb",
+      "first_success": 5294,
+      "train_success_last2000": 1.0,
+      "eval_success": 1.0,
+      "eval_return": 577.0,
+      "source": "new independent training run"
+    },
+    {
+      "seed": 17,
+      "method": "greedy",
+      "first_success": 4701,
+      "train_success_last2000": 1.0,
+      "eval_success": 1.0,
+      "eval_return": 577.0,
+      "source": "new independent training run"
+    },
+    {
+      "seed": 27,
+      "method": "epsilon_greedy",
+      "first_success": 6285,
+      "train_success_last2000": 0.5935,
+      "eval_success": 1.0,
+      "eval_return": 573.0,
+      "source": "identical mandatory clean-training run (reused)"
+    },
+    {
+      "seed": 27,
+      "method": "ucb",
+      "first_success": 5031,
+      "train_success_last2000": 1.0,
+      "eval_success": 1.0,
+      "eval_return": 577.0,
+      "source": "new independent training run"
+    },
+    {
+      "seed": 27,
+      "method": "greedy",
+      "first_success": 4735,
+      "train_success_last2000": 1.0,
+      "eval_success": 1.0,
+      "eval_return": 577.0,
+      "source": "new independent training run"
+    }
+  ]
+}

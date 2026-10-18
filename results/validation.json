@@ -1,11 +1,24 @@
 {
   "environment_cell_sha256": "c48bdb65d1e25cfd1a55578c01510126165000d1619622d0a7ed3538319f463e",
-  "notebook_code_cells_executed": 9,
-  "training_runs": 9,
-  "training_episodes": 270000,
-  "evaluation_episodes": 8100,
-  "pytest_passed": 6,
+  "notebook_code_cells_executed": 13,
+  "training_episodes": 510000,
+  "evaluation_episodes": 13500,
+  "pytest_passed": 13,
   "saved_policy_replay": "passed",
   "report_pages": 2,
-  "submission_zip_files": 2
+  "submission_zip_files": 2,
+  "original_environment_preserved": true,
+  "sparse_policy_replay": "45 steps, 1000 return, passed",
+  "pure_sparse_reward_support": [
+    0,
+    1000
+  ],
+  "bonus_sparse_test_successes": 900,
+  "bonus_sparse_test_episodes": 900,
+  "mandatory_training_runs": 9,
+  "training_runs": 27,
+  "mandatory_training_episodes": 270000,
+  "word_report_rendered_pages": 2,
+  "mandatory_evaluation_episodes": 8100,
+  "new_bonus_evaluation_episodes": 5400
 }

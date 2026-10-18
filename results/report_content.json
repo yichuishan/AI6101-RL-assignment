@@ -1,0 +1,225 @@
+{
+  "events": [
+    {
+      "type": "header",
+      "title": "CliffBoxPushing: learning and robustness"
+    },
+    {
+      "type": "block",
+      "text": "1. Q-learning and the mandatory experiment",
+      "kind": "head",
+      "gap": 5
+    },
+    {
+      "type": "block",
+      "text": "The fixed 6\u00d714 world uses state (agent row, column, box row, column), four actions, 7,056 Cartesian states and 28,224 Q entries. The original reward is \u22121\u2212Manhattan(A,B)\u2212Manhattan(B,G), with \u22121000 for a cliff and +1000 at the goal. Cliff, goal or 100 steps ends the episode. The original environment is unchanged.",
+      "kind": "body",
+      "gap": 5
+    },
+    {
+      "type": "block",
+      "text": "<b>Update:</b> Q(s,a) \u2190 Q(s,a)+\u03b1[r+\u03b3(1\u2212d)max<sub>b</sub>Q(s\u2032,b)\u2212Q(s,a)], with \u03b1=0.1, \u03b3=0.99, \u03b5=0.1 and zero terminal bootstrap. Train 30,000 episodes per noise level {0,0.1,0.2}, seeds {7,17,27}. Noise replaces the intended action uniformly with one of the other three; update the intended action. Evaluate 300 episodes per policy/test noise with \u03b5=0: 8,100 episodes. Success means box at goal.",
+      "kind": "body",
+      "gap": 5
+    },
+    {
+      "type": "image",
+      "name": "learning_curves.png",
+      "width": 500,
+      "gap": 4
+    },
+    {
+      "type": "block",
+      "text": "<b>Figure 1.</b> Original-reward training: 500-episode rolling means, bands \u00b11 sample SD across seeds. Clean greedy success is 100%; random actions achieve 0% in 1,000 episodes. The seed-7 learned clean route takes 39 steps, return 577. Training retains \u03b5 exploration.",
+      "kind": "small",
+      "gap": 5
+    },
+    {
+      "type": "block",
+      "text": "2. Cross-noise generalization and final policy",
+      "kind": "head",
+      "gap": 2
+    },
+    {
+      "type": "image",
+      "name": "robustness_heatmaps.png",
+      "width": 455,
+      "gap": 4
+    },
+    {
+      "type": "block",
+      "text": "<b>Figure 2.</b> Rows=train noise, columns=test noise; mean \u00b1 SD across three seeds (900 episodes/cell). Clean-trained success drops to 48.2% and 18.6% at test noise 0.1/0.2. Both noisy-training settings have zero goal visits in 90,000 training episodes each and zero evaluation successes. Their clean tests all time out: noise training did not improve robustness within this budget.",
+      "kind": "small",
+      "gap": 5
+    },
+    {
+      "type": "image",
+      "name": "report_policy_slices.png",
+      "width": 500,
+      "gap": 4
+    },
+    {
+      "type": "block",
+      "text": "<b>Figure 3.</b> Clean-trained seed-7 V(s)=max<sub>a</sub>Q(s,a), with greedy arrows conditioned on both positions. Gray=unvisited, dot=tie, B=box, G=goal. The notebook includes four slices and the complete joint-state table. Untried actions may retain optimistic zeros.",
+      "kind": "small",
+      "gap": 5
+    },
+    {
+      "type": "pagebreak"
+    },
+    {
+      "type": "header",
+      "title": "Exploration and pure sparse-reward bonuses"
+    },
+    {
+      "type": "block",
+      "text": "3. Bonus 1: exploration comparison",
+      "kind": "head",
+      "gap": 5
+    },
+    {
+      "type": "block",
+      "text": "Original rewards and primitive actions, no action noise; identical \u03b1, \u03b3, 30,000-episode budget and three seeds. Reuse the mandatory clean \u03b5-greedy runs. UCB tries unvisited actions first, then maximizes Q(s,a)+20\u221a[ln(N(s)+1)/N(s,a)]. The bonus affects selection only. The greedy baseline trains with \u03b5=0; every learned policy is evaluated without exploration for 300 episodes/seed.",
+      "kind": "body",
+      "gap": 5
+    },
+    {
+      "type": "table",
+      "rows": [
+        [
+          "Training method",
+          "First goal episode: seeds 7 / 17 / 27",
+          "Eval success",
+          "Mean return"
+        ],
+        [
+          "\u03b5-greedy (\u03b5=0.1)",
+          "9131 / 8038 / 6285",
+          "100.0%",
+          "575.7"
+        ],
+        [
+          "UCB (c=20)",
+          "5106 / 5294 / 5031",
+          "100.0%",
+          "577.0"
+        ],
+        [
+          "Greedy (\u03b5=0)",
+          "5127 / 4701 / 4735",
+          "100.0%",
+          "577.0"
+        ]
+      ],
+      "widths": [
+        120,
+        205,
+        90,
+        104.27559055118115
+      ]
+    },
+    {
+      "type": "block",
+      "text": "UCB discovers a goal earlier than \u03b5-greedy (median 5,106 vs 8,038 episodes), but greedy is earlier still (4,735). Negative step rewards make untried zero Q-values optimistic, and random ties provide exploration even with \u03b5=0. All reach 100% final clean success; these results do not establish a universal UCB advantage.",
+      "kind": "small",
+      "gap": 5
+    },
+    {
+      "type": "block",
+      "text": "4. Bonus 2: only goal reward, hierarchical Q-learning",
+      "kind": "head",
+      "gap": 5
+    },
+    {
+      "type": "block",
+      "text": "<b>Reward is exactly 1000 at the original goal, otherwise 0</b>, including cliffs and timeout. No dense pretraining, intermediate reward or demonstration is used. Hand-designed options use local BFS to position the agent safely, then make one safe push. This map/safety prior does not plan the full box route or use goal distance. The high-level push choice is learned. Every primitive action executes the original step() and counts toward 100; dead ends continue safely until the original timeout.",
+      "kind": "body",
+      "gap": 5
+    },
+    {
+      "type": "block",
+      "text": "For an option lasting k steps, the target is \u03a3<sub>i=0</sub><super>k\u22121</super> \u03b3<super>i</super>r<sub>i</sub> +(1\u2212d)\u03b3<super>k</super>max<sub>o</sub>Q(s\u2032,o). The replay method performs 10 backward passes over actual successful trajectories. All four ablations train 5,000 episodes/seed and evaluate 300 episodes/seed; random options remain random in evaluation.",
+      "kind": "body",
+      "gap": 5
+    },
+    {
+      "type": "table",
+      "rows": [
+        [
+          "Sparse training method",
+          "First goal: seeds 7 / 17 / 27",
+          "Eval success",
+          "Mean steps"
+        ],
+        [
+          "Primitive \u03b5-greedy",
+          "none / none / none",
+          "0.0%",
+          "20.4"
+        ],
+        [
+          "Random safe options",
+          "570 / 1386 / 626",
+          "0.0%",
+          "100.0"
+        ],
+        [
+          "Option Q, no replay",
+          "1155 / 3454 / 2394",
+          "0.0%",
+          "100.0"
+        ],
+        [
+          "Option Q + replay \u00d710",
+          "1155 / 3454 / 2394",
+          "100.0%",
+          "42.3"
+        ]
+      ],
+      "widths": [
+        135,
+        190,
+        90,
+        104.27559055118115
+      ]
+    },
+    {
+      "type": "block",
+      "text": "Only the replay learner reaches 100% final success (900/900; sparse return 1000). No-replay learns the same first goals but fails final tests: replay improves propagation, not first discovery. Equal episode caps do not imply equal interactions or compute; the notebook records both, including extra replay updates.",
+      "kind": "small",
+      "gap": 5
+    },
+    {
+      "type": "image",
+      "name": "bonus_learning_curves.png",
+      "width": 500,
+      "gap": 4
+    },
+    {
+      "type": "block",
+      "text": "<b>Figure 4.</b> Goal-reaching training rates: exploration comparison (500-episode window) and sparse ablations (100-episode window); mean \u00b1 SD across three seeds.",
+      "kind": "small",
+      "gap": 5
+    },
+    {
+      "type": "block",
+      "text": "<b>Scope.</b> Three seeds limit precision. Constant \u03b1/\u03b5 and the four-coordinate state (without time remaining) do not prove convergence or optimality. Sparse skills supply substantial map knowledge; the ablations explicitly isolate their contribution. <b>References:</b> Watkins &amp; Dayan (1992), Q-learning; Auer et al. (2002), Finite-time Analysis of the Multiarmed Bandit Problem; Sutton, Precup &amp; Singh (1999), Between MDPs and semi-MDPs; supplied AI6101 brief/environment.",
+      "kind": "small",
+      "gap": 0
+    }
+  ],
+  "styles": {
+    "body": {
+      "font_size": 8.3,
+      "leading": 11.1
+    },
+    "small": {
+      "font_size": 7.3,
+      "leading": 9.7
+    },
+    "head": {
+      "font_size": 10.2,
+      "leading": 13.5
+    }
+  }
+}

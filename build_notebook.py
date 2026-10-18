@@ -20,8 +20,10 @@ md('''# AI6101 — Q-learning for CliffBoxPushing
 **Name:** YourName · **Matriculation number:** YourMatriculationNumber
 
 This notebook is self-contained: run all cells in order. It completes the RLAgent,
-value/policy visualization and action-noise evaluation tasks. The supplied environment
-below is unchanged. The full experiment trains **9 independent policies** (3 training
+value/policy visualization, action-noise evaluation, and both optional bonus tasks.
+Sections 7 and 8 add UCB/greedy exploration comparisons and a strictly sparse-reward
+hierarchical learner with ablations. The supplied environment below is unchanged.
+The mandatory experiment trains **9 independent policies** (3 training
 noise levels × 3 seeds), for **30,000 episodes each**, then evaluates every policy for
 **300 episodes at each test noise**. Expect a few minutes on a CPU; no GPU is required.
 
@@ -69,7 +71,7 @@ finite-horizon MDP. Fixed learning/exploration rates do not establish convergenc
 code(code_file('agent.py'))
 md('''### Small correctness checks
 These assertions check the terminal mask and exact noise definition. The repository's
-six pytest tests additionally cover nonterminal targets, uniform noise frequencies,
+pytest tests additionally cover nonterminal targets, uniform noise frequencies,
 intended-action credit, evaluation isolation, success detection and original dynamics.''')
 code('''check_agent = RLAgent(CliffBoxGridWorld(), 0, alpha=0.5, gamma=0.9)
 s, next_s = (4, 1, 1, 1), (3, 1, 1, 1)
@@ -151,12 +153,136 @@ The deterministic clean task can give identical greedy outcomes across hundreds 
 evaluation episodes. Those repetitions do not demonstrate independent training
 reliability; the three independent training seeds address that separately. No claim
 is made that the learned route is shortest or globally optimal. Failure under noise
-is retained and discussed rather than discarded. We did not attempt the optional
-UCB or sparse-reward bonus tasks.
+is retained and discussed rather than discarded. The two bonus studies below are
+separate from the mandatory original-reward noise study.
 
 References: Watkins & Dayan (1992), *Q-learning*, Machine Learning 8, 279–292;
 Sutton & Barto (2018), *Reinforcement Learning: An Introduction*, 2nd ed., §6.5;
 AI6101 assignment brief and supplied `RLAgent_2026Fall.ipynb` environment.''')
+
+md(r'''## 7. Bonus 1 — UCB versus ε-greedy and no exploration
+All three methods use the **original dense reward**, the original primitive action
+space and no action noise. Train 30,000 episodes per policy with α=0.1, γ=0.99,
+seeds 7/17/27, and evaluate 300 episodes per seed with all exploration disabled.
+The mandatory clean ε-greedy runs are reused exactly rather than trained again.
+The no-exploration baseline **trains** with ε=0; it is distinct from simply turning
+exploration off at evaluation. Random tie-breaking is shared by all methods.
+
+UCB selects untried actions first, then maximizes
+$Q(s,a)+20\sqrt{\ln(N(s)+1)/N(s,a)}$. The coefficient 20 is fixed in raw reward units;
+no claim of a calibrated statistical confidence interval is made for bootstrapped Q.
+The UCB term affects action selection only, never the reward or TD target.
+
+Recorded bonus artifacts can be reused to read results quickly. Set
+`RECOMPUTE_BONUS=True` to retrain; when the notebook is downloaded alone and no
+artifacts exist, the experiments run automatically. Delete cached files after changing
+algorithm code or hyperparameters. The final PDF uses these same measured records.''')
+bonus_source = code_file('bonus.py')
+exploration_source, sparse_source = bonus_source.split('def sparse_reward(env):', 1)
+code(exploration_source)
+code('''import json
+RECOMPUTE_BONUS = False
+exploration_files = [OUTPUT_DIR/'bonus_exploration.npz', OUTPUT_DIR/'bonus_exploration.json']
+if RECOMPUTE_BONUS or not all(path.exists() for path in exploration_files):
+    exploration_bonus = run_exploration_bonus(OUTPUT_DIR, reference_study=study)
+else:
+    exploration_bonus = {'arrays':dict(np.load(exploration_files[0])),
+                         'summary':json.loads(exploration_files[1].read_text())}
+    assert exploration_bonus['summary']['episodes'] == 30000
+    assert exploration_bonus['summary']['seeds'] == [7,17,27]
+    assert exploration_bonus['summary']['ucb_c'] == 20
+    print('Reusing completed, recorded exploration experiments; set RECOMPUTE_BONUS=True to retrain.')
+print('method | seed | first goal episode | greedy success | mean original return')
+for row in exploration_bonus['summary']['rows']:
+    print(row['method'], row['seed'], row['first_success'],
+          f"{row['eval_success']:.1%}", f"{row['eval_return']:.2f}", sep=' | ')
+ev = exploration_bonus['arrays']['evaluation']
+for j, method in enumerate(exploration_bonus['summary']['methods']):
+    print(f"{method}: greedy success {ev[:,j,0].mean():.1%} "
+          f"± {ev[:,j,0].std(ddof=1):.1%} across seeds")''')
+
+md(r'''## 8. Bonus 2 — strictly sparse rewards with push options and replay
+For this experiment alone, discard the reward returned by `env.step()` and use
+**1000 only when the box reaches the original goal, otherwise 0**. This includes
+zero for walking, distance changes, cliffs and timeout. The map, fixed initial state,
+100-primitive-step limit and transition implementation remain unchanged. There is
+no dense pretraining, expert demonstration, intrinsic reward or reward relabeling.
+
+Plain sparse ε-greedy Q-learning is the baseline. Our hierarchical method uses
+**hand-designed safe push skills**: local BFS moves the agent to the required side
+of the box, then executes one safe push. It knows the map and box boundary rules;
+this is a substantial skill/safety prior and is disclosed explicitly. It does not
+plan a box-to-goal route or rank positions by goal distance. The learned high-level
+policy chooses the next push direction. Every low-level step goes through the
+original `step()` and counts against the same 100-step cap. Unpushable states are
+walked safely until the original timeout; episodes are not reset early.
+
+For an option lasting $k$ primitive steps, use the semi-Markov target
+$\sum_{i=0}^{k-1}\gamma^i r_i + (1-d)\gamma^k\max_o Q(s',o)$.
+The replay variant makes 10 backward passes over a **genuinely successful** option
+trajectory. Replay has extra computation, which is counted separately; it creates
+no new environment experience. The random-options ablation has the identical skills
+but does not learn, isolating the skill prior from learning. The no-replay ablation
+isolates replay. Four methods × three seeds × 5,000 episodes; evaluation uses 300
+episodes per method/seed with exploration off (random options remain random by definition).
+Equal episode/horizon caps do not imply equal interaction/update counts; those are
+reported. Under this reward, mean undiscounted return must equal 1000 × success rate.''')
+code('def sparse_reward(env):'+sparse_source)
+code('''sparse_files = [OUTPUT_DIR/'bonus_sparse.npz', OUTPUT_DIR/'bonus_sparse.json',
+                OUTPUT_DIR/'bonus_sparse_rollout.json']
+if RECOMPUTE_BONUS or not all(path.exists() for path in sparse_files):
+    sparse_bonus = run_sparse_bonus(OUTPUT_DIR)
+else:
+    sparse_bonus = {'arrays':dict(np.load(sparse_files[0])),
+                    'summary':json.loads(sparse_files[1].read_text()),
+                    'rollout':json.loads(sparse_files[2].read_text())}
+    assert sparse_bonus['summary']['episodes'] == 5000
+    assert sparse_bonus['summary']['seeds'] == [7,17,27]
+    assert sparse_bonus['summary']['replay_passes'] == 10
+    print('Reusing completed, recorded sparse experiments; set RECOMPUTE_BONUS=True to retrain.')
+print('method | seed | first success | greedy success | steps | interactions | extra replay updates')
+for row in sparse_bonus['summary']['rows']:
+    print(row['method'], row['seed'], row['first_success'],
+          f"{row['eval_success']:.1%}", f"{row['eval_steps']:.1f}",
+          row['total_interactions'], row['replay_updates'], sep=' | ')
+ev = sparse_bonus['arrays']['evaluation']
+assert np.allclose(ev[:,:,1], 1000*ev[:,:,0])
+for j, method in enumerate(sparse_bonus['summary']['methods']):
+    print(f"{method}: success={ev[:,j,0].mean():.2%} ±{ev[:,j,0].std(ddof=1):.2%}; "
+          f"mean sparse return={ev[:,j,1].mean():.2f}")
+figure = plot_bonus_results(exploration_bonus, sparse_bonus, OUTPUT_DIR)
+display(figure); plt.close(figure)
+print('Seed-7 learned sparse rollout:', len(sparse_bonus['rollout']['actions']), 'steps,',
+      sum(sparse_bonus['rollout']['rewards']), 'return, success=',sparse_bonus['rollout']['success'])
+print('Reward support:', sorted(set(sparse_bonus['rollout']['rewards'])))
+assert set(sparse_bonus['rollout']['rewards']) <= {0.,1000.}
+assert len(sparse_bonus['rollout']['actions']) <= 100
+print('Sparse reward and primitive-step horizon checks passed.')''')
+
+md('''### Bonus interpretation
+Recorded results: all three exploration methods reach 100% final clean success;
+median first-goal episodes are 8,038 (ε-greedy), 5,106 (UCB) and 4,735 (greedy).
+Thus UCB helps discovery relative to ε-greedy here, but does not beat greedy.
+In sparse learning only option Q with replay achieves 100% evaluation success
+(900/900). Primitive ε-greedy, random options and option Q without replay each
+record zero evaluation successes. The two learned option variants discover their
+first goals at the same episodes (1,155 / 3,454 / 2,394), showing that replay helps
+propagate observed success rather than create the first one. These statements
+describe the saved run; rerunning changed settings can give different results.
+
+Read first-goal episode and the learning curves as well as final success. A greedy
+baseline can still explore through optimistic zero initialization and random ties;
+ε=0 does not mean every run follows one fixed path. UCB can change discovery speed
+without increasing final performance. Its coefficient depends on reward scale.
+
+For the sparse study, compare random options against learned options to see whether
+success comes only from the skill prior, then compare learned options with/without
+replay to assess reward propagation. The first successful trajectory cannot be caused
+by success replay: no replay occurs before that event. Report these ablations rather
+than attributing all improvement to Q-learning. Results use only three seeds and do
+not prove universal superiority or global optimality. References for these additions:
+Auer et al. (2002), *Finite-time Analysis of the Multiarmed Bandit Problem*;
+Sutton, Precup & Singh (1999), *Between MDPs and semi-MDPs*.''')
 
 notebook = nbf.v4.new_notebook(cells=cells, metadata={
     'kernelspec': {'display_name': 'Python (AI6101 RL)', 'language': 'python', 'name': 'ai6101'},

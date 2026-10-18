@@ -182,7 +182,7 @@ RETURN_TABLE
 
 ## 8. 已经验证了什么
 
-- 六项 pytest 测试：非终止/终止 Q 目标；噪声排除原动作并近似均匀、频率正确；评估关闭 ε 且不修改 Q；噪声下更新 intended action；原始环境终止/边界/推箱行为；成功不依赖正回报。
+- 13 项 pytest 测试：原有六项验证之外，新增 UCB 探索计数、无探索训练、严格 0/1000 奖励、安全动作选项真实执行、半马尔可夫折扣、稀疏评估冻结 Q 值，以及成功回放不虚构奖励的检查。
 - 提交 Notebook 从头到尾自动执行，保留真实输出与图表，不需要手工输入动作。
 - 原始环境代码与上传 Notebook 的环境代码逐字核对。
 - 论文 PDF 的页数与版面经过检查，固定为两页。
@@ -195,8 +195,8 @@ RETURN_TABLE
 1. **时间没有进入状态。** 模板只使用人物和箱子四个坐标，但 100 步上限意味着同样位置在剩余 1 步和剩余 90 步时的价值不同。这里遵循模板，用同一张静态 Q 表近似有限时域问题，并在时间终止时关闭后续估计；没有宣称它是包含剩余时间的精确最优有限时域解。
 2. **固定学习率和探索率。** 本实验强调公平、可复现比较，使用所有设置共用的固定超参数；没有满足所有经典 Q-learning 渐近收敛定理的条件，所以不能用这些定理声称已经收敛。
 3. **三个种子的统计能力有限。** 对噪声训练的改善或退化作描述性分析，不把几个百分点的变化自动解释为显著优势。
-4. **没有外加安全规则。** 未禁止走向悬崖的动作，也没有内置最短路、专家示范、模型规划或额外奖励；否则会改变算法比较的含义。
-5. **没有执行可选加分项。** UCB、无探索策略的系统比较和纯稀疏奖励探索都需要独立设计与实验。本报告不声称完成这些项目。
+4. **先验不同，需要分别解释。** 必做实验和探索策略比较未加入安全规则或规划；稀疏奖励层次方法使用基于地图的安全站位 BFS 和一次推动选项。这是明确披露的技能先验，通过随机选项及无回放消融来区分其与学习的作用，不能把全部提升都归因于原始 Q-learning。
+5. **额外计算并非免费。** 成功回放不增加环境交互，但增加 TD 更新次数；相同回合数和 100 步上限也不意味着实际交互数完全相同。新增实验逐种子记录这些开销。
 
 可以继续探索：带时间状态的有限时域 Q 学习、SARSA 与 Q-learning 的风险差异、探索率退火、更多训练种子与训练预算、置信区间和风险敏感目标。这些都属于后续实验，本次结果不包含这些方法。
 
@@ -210,9 +210,11 @@ source /workspace/.cloud-setup/ai6101/env.sh
 python -m pytest -q tests
 # 单独重新训练并输出原始结果（会覆盖 results 中本次同名实验文件）：
 python -m rl_assignment.experiments
+# 独立运行两个加分实验（复用已有的干净 ε-greedy 对照）：
+python -m rl_assignment.bonus
 ```
 
-更直接的使用方式是在 Jupyter 中打开提交 Notebook，选择 AI6101 内核后按顺序 Run All。它不依赖源码目录，输出会写到当前工作目录的 `results/`。完整训练是九个策略、每个 30,000 回合；如果只是阅读，查看已经保存的输出即可。
+更直接的使用方式是在 Jupyter 中打开提交 Notebook，选择 AI6101 内核后按顺序 Run All。它不依赖源码目录，输出会写到当前工作目录的 `results/`。必做实验是九个策略、每个 30,000 回合。第 7、8 节在结果文件存在时复用已完成的加分实验，设置 `RECOMPUTE_BONUS=True` 可强制重新训练；单独下载 Notebook、没有结果文件时会自动训练。修改算法或参数后，应删除缓存或强制重跑。如果只是阅读，查看已经保存的输出即可。
 
 更换机器时，可安装 `requirements.txt` 中固定版本的 NumPy、Matplotlib、JupyterLab、ipykernel 与 pytest。生成 PDF 还需要 `requirements-report.txt`；这与运行强化学习 Notebook 是两组用途不同的依赖。
 
@@ -221,6 +223,8 @@ python -m rl_assignment.experiments
 - Watkins, C. J. C. H. & Dayan, P. (1992). Q-learning. *Machine Learning*, 8, 279–292. DOI: 10.1007/BF00992698。
 - Sutton, R. S. & Barto, A. G. (2018). *Reinforcement Learning: An Introduction*, 2nd edition, §6.5。
 - 本次上传的 AI6101 作业说明及 `RLAgent_2026Fall.ipynb` 原始环境。
+- Auer, Cesa-Bianchi & Fischer (2002). *Finite-time Analysis of the Multiarmed Bandit Problem*。
+- Sutton, Precup & Singh (1999). *Between MDPs and semi-MDPs: A framework for temporal abstraction in reinforcement learning*。
 '''
 text=text.replace('SUCCESS_TABLE', table(success, success_sd, True))
 text=text.replace('RETURN_TABLE', table(returns, return_sd))
@@ -230,6 +234,61 @@ text=text.replace('BASELINE_RETURN', f'{np.mean(s["baseline"]["returns"]):.2f}')
 text=text.replace('ROLLOUT_STEPS', str(len(rollout['actions'])))
 text=text.replace('ROLLOUT_RETURN', f'{sum(rollout["rewards"]):.0f}')
 text=text.replace('ROLLOUT_SUCCESS', str(rollout['success']))
+ex=json.loads((root/'results/bonus_exploration.json').read_text())
+sp=json.loads((root/'results/bonus_sparse.json').read_text())
+ex_table=['| 方法 | 首次成功：种子 7 / 17 / 27 | 最终成功率 | 平均回报 |','|---|---|---:|---:|']
+for method in ex['methods']:
+    rows=[r for r in ex['rows'] if r['method']==method]
+    first=' / '.join(str(r['first_success']) for r in rows)
+    ex_table.append(f"| {method} | {first} | {np.mean([r['eval_success'] for r in rows]):.1%} | {np.mean([r['eval_return'] for r in rows]):.2f} |")
+sp_table=['| 方法 | 首次成功：种子 7 / 17 / 27 | 最终成功率 | 平均稀疏回报 | 平均测试步数 |','|---|---|---:|---:|---:|']
+cost_table=['| 方法 | 平均环境交互数 | 平均额外回放更新数 |','|---|---:|---:|']
+for method in sp['methods']:
+    rows=[r for r in sp['rows'] if r['method']==method]
+    first=' / '.join('未成功' if r['first_success'] is None else str(r['first_success']) for r in rows)
+    sp_table.append(f"| {method} | {first} | {np.mean([r['eval_success'] for r in rows]):.1%} | {np.mean([r['eval_return'] for r in rows]):.1f} | {np.mean([r['eval_steps'] for r in rows]):.1f} |")
+    cost_table.append(f"| {method} | {np.mean([r['total_interactions'] for r in rows]):,.0f} | {np.mean([r['replay_updates'] for r in rows]):,.0f} |")
+bonus=r'''## 新增第 7 节：探索策略比较（第一个加分任务）
+
+对照为默认 ε-greedy、UCB、训练阶段 ε=0 的贪心策略。均使用原始奖励、原始动作、不加动作噪声；学习率 0.1、折扣 0.99、每种策略训练 30,000 回合，种子 7/17/27。ε-greedy 复用必做实验中完全相同的干净训练结果。每种策略每个种子评估 300 回合，关闭全部探索加成。
+
+UCB 先尝试未尝试的动作，再最大化 `Q(s,a) + 20 * sqrt(log(N(s)+1) / N(s,a))`。计数加成只用于训练选动作，不进入奖励或 TD 目标。系数 20 使用原始奖励单位；这个 Q-learning 版本是探索启发式，不直接提供严格统计置信区间保证。
+
+EX_TABLE
+
+首次成功中位回合数为 **8,038、5,106、4,735**。UCB 早于 ε-greedy，却没有超过贪心对照；三者最终均达到 100% 干净测试成功率。原始负逐步奖励使全零初始化具有乐观性：未尝试动作的零值可能高于已尝试动作的负值；随机平局选择也提供探索。所以“ε=0”不等于“没有任何探索行为”，本实验不支持 UCB 普遍优胜的结论。
+
+## 新增第 8 节：纯稀疏奖励与层次化学习（第二个加分任务）
+
+只使用 **箱子到达原目标奖励 1000，否则 0**。丢弃原始密集奖励；距离变化、掉崖、超时均不额外加减分。地图、初始位置和每回合 100 个原始动作的上限不变，没有密集预训练、示范、内在奖励或目标重标注。
+
+安全推动选项是手工技能：BFS 只寻找人物绕到箱子所需一侧的安全路径，再执行一次安全推动。不规划完整箱子到目标路线，也不根据目标距离挑选方向；高层 Q-learning 学习选择下一次推动方向。**这是基于地图知识的技能/安全先验**，报告明确披露，并通过随机选项、不带回放的选项学习进行消融。
+
+每个选项消耗 k 个真实 `env.step()` 动作，全部计入 100 步上限。其目标为：
+
+$$y=\sum_{i=0}^{k-1}\gamma^i r_i+(1-d)\gamma^k\max_o Q(s',o).$$
+
+下一选项价值必须使用 `gamma**k`；如果成功发生在选项末步，其选项内奖励为 `1000 * gamma**(k-1)`。达到步数上限时立即按原环境终止。无可行推动时，不提前重置，而用安全的真实人物动作耗尽原回合。
+
+四种方法均训练 5,000 回合/种子，评估 300 回合/种子。学习器测试关闭 ε 和更新；随机选项基线仍按定义随机选择。
+
+SP_TABLE
+
+只有**选项 Q＋成功回放**在本次最终测试中达到 **900/900 成功**，平均稀疏回报为 1000。满足 `平均回报 = 1000 × 成功率`。种子 7 的成功路线为 45 步，另两种子为 39、43 步；轨迹在 `bonus_sparse_rollout.json`，未声称全局最短。
+
+回放只在真实成功后进行，将实际选项转移从后向前额外更新 10 遍。没有成功时回放次数为零，不虚构奖励。带回放与不带回放的首次成功回合完全相同（1,155 / 3,454 / 2,394），之后结果才分开：回放改善**成功信息的传播与利用**，首次发现来自探索与技能先验。随机技能和无回放学习在训练中曾偶尔成功，最终测试却没有成功，说明找到一条成功经历不等于形成可靠策略。
+
+![两个加分实验的学习曲线](../results/bonus_learning_curves.png)
+
+阴影为三个训练种子的样本标准差。右图没有加入任何中间奖励。
+
+COST_TABLE
+
+相同回合数和上限不意味着实际交互相同：随机原始动作容易提前掉崖，安全选项经常运行到超时，学会后又会提前成功。回放不增加环境交互，却增加 TD 计算。因此记录这些开销，不把额外计算视为免费，也不把安全技能带来的全部改善都归因于 Q-learning。
+
+'''
+bonus=bonus.replace('EX_TABLE','\n'.join(ex_table)).replace('SP_TABLE','\n'.join(sp_table)).replace('COST_TABLE','\n'.join(cost_table))
+text=text.replace('## 8. 已经验证了什么',bonus+'## 8. 已经验证了什么')
 path=root/'deliverables/代码逻辑与实验详解.md'
 path.write_text(text)
 print(path)

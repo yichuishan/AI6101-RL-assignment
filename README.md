@@ -9,7 +9,7 @@ Replace `YourName` and `YourMatriculationNumber` in the document headers and fil
 before submission. The extended Chinese explanation is
 [`代码逻辑与实验详解.md`](deliverables/代码逻辑与实验详解.md).
 
-The supplied environment is unchanged. The solution uses tabular Q-learning with
+The supplied environment is unchanged. The mandatory study uses tabular Q-learning with
 alpha=0.1, gamma=0.99, epsilon=0.1 and random greedy tie-breaking. Action noise
 replaces an intended action uniformly with one of the other three actions; the Q
 update credits the intended action. Evaluation disables epsilon exploration.
@@ -47,3 +47,48 @@ it overwrites saved outputs, so do not run it merely to read the finished result
 `requirements-report.txt` plus the system DejaVu Sans font. `build_explanation.py`
 regenerates the extended Chinese explanation. The report-generation dependencies
 are separate from the notebook runtime dependencies.
+
+## Both bonus tasks
+
+Notebook sections **7** and **8** implement and evaluate both optional tasks:
+
+- **Exploration:** original-reward epsilon-greedy, UCB (c=20), and epsilon=0
+  training, 30,000 episodes with seeds 7/17/27. The clean epsilon runs are reused
+  from the mandatory study. Median first-success episodes are 8,038 / 5,106 /
+  4,735; all reach 100% final clean evaluation success. UCB does not beat the
+  greedy baseline here; optimistic initialization and random ties matter.
+- **Pure sparse reward:** exactly 1000 at the original goal, otherwise zero.
+  Compare primitive epsilon-greedy, random safe push options, option Q-learning,
+  and option Q-learning with 10 reverse replay passes after actual successes.
+  Each trains 5,000 episodes per seed. Only the replay variant achieves 100%
+  final success (900/900); each other method records zero final successes.
+  The options use hand-designed local BFS for safe agent positioning and one
+  push; they do not plan a full box route or use goal-distance rewards.
+  Every primitive step counts toward the unchanged 100-step horizon. Interaction
+  counts and additional replay updates are reported rather than treated as equal.
+
+All bonus evaluations use 300 episodes per method/seed. Learned policies disable
+exploration and updates; the random-options baseline stays random by definition.
+Raw bonus records, CSV tables, policy snapshot and curves are in `results/bonus_*`.
+
+```bash
+python -m rl_assignment.bonus
+```
+
+The notebook reuses completed bonus artifacts when available; set
+`RECOMPUTE_BONUS=True` to retrain. With no artifacts it trains automatically, so
+the submission notebook remains self-contained. Clear caches after changing code
+or parameters. The updated PDF and editable Word report both contain the bonus
+results and are formatted as two pages.
+
+Regenerate documents and archives after a new experiment:
+
+```bash
+python build_report.py
+python build_word_report.py
+python build_explanation.py
+python package_deliverables.py
+```
+
+Word generation additionally uses `python-docx` from `requirements-report.txt`.
+The automated test suite now has 13 tests covering the mandatory and bonus methods.

@@ -1,0 +1,10 @@
+seed,method,first_success,train_success_last2000,eval_success,eval_return,source
+7,epsilon_greedy,9131,0.6045,1.0,577.0,identical mandatory clean-training run (reused)
+7,ucb,5106,1.0,1.0,577.0,new independent training run
+7,greedy,5127,1.0,1.0,577.0,new independent training run
+17,epsilon_greedy,8038,0.5935,1.0,577.0,identical mandatory clean-training run (reused)
+17,ucb,5294,1.0,1.0,577.0,new independent training run
+17,greedy,4701,1.0,1.0,577.0,new independent training run
+27,epsilon_greedy,6285,0.5935,1.0,573.0,identical mandatory clean-training run (reused)
+27,ucb,5031,1.0,1.0,577.0,new independent training run
+27,greedy,4735,1.0,1.0,577.0,new independent training run

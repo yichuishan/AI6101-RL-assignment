@@ -1,152 +1,188 @@
-"""Produce the strictly two-page report from measured experiment artifacts."""
+"""Build a strictly two-page PDF and shared editable-document content."""
 from pathlib import Path
 import json
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import colors
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.colors import HexColor
+from reportlab.lib.colors import HexColor, white
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Paragraph
+from reportlab.platypus import Paragraph, Table, TableStyle
 from reportlab.lib.styles import ParagraphStyle
 from PIL import Image
+from rl_assignment.plotting import decorate_grid, ARROWS
 
-ROOT = Path(__file__).resolve().parent
-OUT = ROOT / 'deliverables'
-RESULTS = ROOT / 'results'
-summary = json.loads((RESULTS / 'summary.json').read_text())
-arrays = np.load(RESULTS / 'experiment_arrays.npz')
-success = arrays['success'].mean(0)
-returns = arrays['mean_return'].mean(0)
-sd = arrays['success'].std(0, ddof=1)
-config = summary['config']
-baseline = summary['baseline']
-rollout = summary['rollout']
+ROOT=Path(__file__).resolve().parent
+RESULTS=ROOT/'results';OUT=ROOT/'deliverables'
+summary=json.loads((RESULTS/'summary.json').read_text())
+arrays=np.load(RESULTS/'experiment_arrays.npz')
+success=arrays['success'].mean(0)
+explore=json.loads((RESULTS/'bonus_exploration.json').read_text())
+sparse=json.loads((RESULTS/'bonus_sparse.json').read_text())
+exp_arrays=np.load(RESULTS/'bonus_exploration.npz')
+sparse_arrays=np.load(RESULTS/'bonus_sparse.npz')
 
-pdfmetrics.registerFont(TTFont('DejaVu', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
-pdfmetrics.registerFont(TTFont('DejaVu-Bold', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'))
-pdfmetrics.registerFontFamily('DejaVu', normal='DejaVu', bold='DejaVu-Bold')
-W, H = A4
-M = 38
-WIDTH = W - 2*M
-path = OUT / 'AI6101_Report_YourName_YourMatriculationNumber.pdf'
-c = canvas.Canvas(str(path), pagesize=A4)
-c.setTitle('Q-learning for CliffBoxPushing: Learning and Action-noise Robustness')
+# Two readable joint-state slices for the space-limited PDF; all four and the
+# complete 84-by-84 joint-state table remain in the notebook.
+model=np.load(RESULTS/'policy_train_0.0_seed_7.npz')
+q,visits=model['q'],model['visits']
+v=q.max(2)
+known=v[visits>0]
+norm=colors.Normalize(known.min(),known.max())
+cmap=plt.get_cmap('YlGnBu').copy();cmap.set_bad('#ededed')
+fig,axes=plt.subplots(1,2,figsize=(10.5,2.55),layout='constrained')
+for ax,box in zip(axes,[(1,1),(2,13)]):
+    bi=box[0]*14+box[1]
+    matrix=np.where(visits[:,bi]>0,v[:,bi],np.nan).reshape(6,14)
+    im=ax.imshow(matrix,cmap=cmap,norm=norm);decorate_grid(ax,box)
+    for ai in range(84):
+        if visits[ai,bi] and divmod(ai,14)!=box:
+            best=np.flatnonzero(q[ai,bi]==q[ai,bi].max())
+            label=ARROWS[int(best[0])+1] if len(best)==1 else '·'
+            ax.text(ai%14,ai//14,label,ha='center',va='center',fontsize=10,
+                    color='white' if norm(v[ai,bi])>.65 else '#172533',zorder=4)
+    ax.set_title(f'Box fixed at {box}; agent position varies',fontsize=9)
+fig.colorbar(im,ax=axes,label='V(s) = max Q(s,a)',shrink=.8)
+fig.savefig(RESULTS/'report_policy_slices.png',dpi=210,bbox_inches='tight');plt.close(fig)
+
+pdfmetrics.registerFont(TTFont('DejaVu','/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
+pdfmetrics.registerFont(TTFont('DejaVu-Bold','/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'))
+pdfmetrics.registerFontFamily('DejaVu',normal='DejaVu',bold='DejaVu-Bold')
+W,H=A4;M=38;WIDTH=W-2*M
+path=OUT/'AI6101_Report_YourName_YourMatriculationNumber.pdf'
+c=canvas.Canvas(str(path),pagesize=A4)
+c.setTitle('CliffBoxPushing: Q-learning, Exploration and Sparse Rewards')
 c.setAuthor('YourName — YourMatriculationNumber')
-styles = {
-    'body': ParagraphStyle('body', fontName='DejaVu', fontSize=8.8, leading=12.0,
-                           textColor=HexColor('#233341'), spaceAfter=5),
-    'small': ParagraphStyle('small', fontName='DejaVu', fontSize=7.6, leading=10.3,
-                            textColor=HexColor('#41515d')),
-    'head': ParagraphStyle('head', fontName='DejaVu-Bold', fontSize=10.5, leading=14,
-                           textColor=HexColor('#1a4f75')),
-}
+styles={
+ 'body':ParagraphStyle('body',fontName='DejaVu',fontSize=8.3,leading=11.1,textColor=HexColor('#233341')),
+ 'small':ParagraphStyle('small',fontName='DejaVu',fontSize=7.3,leading=9.7,textColor=HexColor('#41515d')),
+ 'head':ParagraphStyle('head',fontName='DejaVu-Bold',fontSize=10.2,leading=13.5,textColor=HexColor('#1a4f75'))}
+events=[]
 
-def block(text, y, kind='body', gap=6):
-    p = Paragraph(text, styles[kind])
-    _, height = p.wrap(WIDTH, H)
-    if y - height < 36:
-        raise ValueError(f'Report overflow at {text[:70]}: y={y}, height={height}')
-    p.drawOn(c, M, y-height)
+def block(text,y,kind='body',gap=5):
+    p=Paragraph(text,styles[kind]);_,height=p.wrap(WIDTH,H)
+    if y-height<34:raise ValueError(f'Text overflow: {text[:60]}, bottom={y-height:.1f}')
+    p.drawOn(c,M,y-height)
+    events.append(dict(type='block',text=text,kind=kind,gap=gap))
     return y-height-gap
 
-def image(name, y, width=WIDTH, gap=5):
-    img = RESULTS / name
-    with Image.open(img) as im:
-        height = width * im.height / im.width
-    if y-height < 36:
-        raise ValueError(f'Image overflow: {name}, bottom={y-height}')
-    c.drawImage(str(img), M+(WIDTH-width)/2, y-height, width=width, height=height)
+def image(name,y,width=WIDTH,gap=4):
+    with Image.open(RESULTS/name) as im:height=width*im.height/im.width
+    if y-height<34:raise ValueError(f'Figure overflow: {name}, bottom={y-height:.1f}')
+    c.drawImage(str(RESULTS/name),M+(WIDTH-width)/2,y-height,width=width,height=height)
+    events.append(dict(type='image',name=name,width=width,gap=gap))
     return y-height-gap
 
-def header(page, title):
-    c.setFillColor(HexColor('#13334c'))
-    c.setFont('DejaVu-Bold', 15)
-    c.drawString(M, H-42, title)
-    c.setFont('DejaVu', 8)
-    c.setFillColor(HexColor('#5a6976'))
-    c.drawString(M, H-58, 'AI6101 · YourName · YourMatriculationNumber')
-    c.setStrokeColor(HexColor('#b8cad8'))
-    c.line(M, H-67, W-M, H-67)
-    c.setFont('DejaVu', 7.5)
-    c.drawString(M, 22, 'Unchanged supplied environment · 3 independent training seeds')
-    c.drawRightString(W-M, 22, f'{page} / 2')
-    return H-80
+def table(rows,y,widths):
+    cells=[[Paragraph(str(cell),styles['small']) for cell in row] for row in rows]
+    t=Table(cells,colWidths=widths,hAlign='LEFT')
+    t.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),HexColor('#eaf0f5')),
+       ('LINEBELOW',(0,0),(-1,0),.5,HexColor('#9fb4c5')),
+       ('LINEBELOW',(0,-1),(-1,-1),.4,HexColor('#bccbd6')),
+       ('VALIGN',(0,0),(-1,-1),'MIDDLE'),('TOPPADDING',(0,0),(-1,-1),3),
+       ('BOTTOMPADDING',(0,0),(-1,-1),3)]))
+    _,height=t.wrap(WIDTH,H)
+    if y-height<34:raise ValueError(f'Table overflow: {y-height}')
+    t.drawOn(c,M,y-height)
+    events.append(dict(type='table',rows=rows,widths=widths))
+    return y-height-5
 
-y = header(1, 'Q-learning for CliffBoxPushing')
-y = block('1. Task, algorithm and controlled experiment', y, 'head')
-y = block('The agent must push a box through the fixed 6×14 map to (4,13). '
-          'The state is (agent row, agent column, box row, box column); four actions '
-          'give 7,056 Cartesian states and 28,224 Q entries. We keep the supplied map, '
-          'reward and step() unchanged. Episodes terminate at a cliff, the goal or 100 steps. '
-          'Reward is −1 − Manhattan(A,B) − Manhattan(B,G), with −1000 for a cliff '
-          'and +1000 for reaching the goal.', y)
-y = block('<b>Q-learning:</b> Q(s,a) ← Q(s,a) + α[r + γ(1−d) max<sub>b</sub> Q(s′,b) − Q(s,a)]. '
-          'Here d marks termination, so terminal transitions do not bootstrap. '
-          'Initialize Q to zero; use α=0.1, γ=0.99 and fixed ε=0.1 with uniform greedy tie-breaking. '
-          'With probability p, replace the intended action uniformly with one of the other three. '
-          'Update Q for the <b>intended</b> action, learning the noisy decision channel.', y)
-y = block(f'Train {config["episodes"]:,} episodes per policy for p<sub>train</sub>∈{{0,0.1,0.2}} '
-          'and seeds {7,17,27}: nine policies. Evaluate each for 300 episodes per '
-          'p<sub>test</sub> with ε=0 and separate RNGs (8,100 evaluation episodes). '
-          '<b>Success means box at goal</b>, not return &gt;0. We use no planning, reward '
-          'engineering or extra state features.', y)
-y = block('2. Learning performance', y, 'head', gap=2)
-y = image('learning_curves.png', y)
-clean_train = arrays['training_success'][:, 0, -2000:].mean()
-y = block(f'<b>Figure 1.</b> 500-episode moving means; bands are ±1 sample SD across seeds. '
-          f'Clean-trained greedy success is {100*success[0,0]:.1f}% '
-          f'(SD {100*sd[0,0]:.1f} percentage points), versus '
-          f'{100*np.mean(baseline["success"]):.1f}% for 1,000 random episodes '
-          f'(mean return {np.mean(baseline["returns"]):.1f}). '
-          f'The last 2,000 clean-training episodes succeed {100*clean_train:.1f}% of the time: '
-          'ε exploration remains active during training, so training and greedy evaluation differ.', y, 'small')
-y = block('3. A learned clean solution', y, 'head', gap=2)
-y = image('greedy_trajectory.png', y)
-y = block(f'<b>Figure 2.</b> Preselected seed 7, clean-trained greedy rollout: '
-          f'{len(rollout["actions"])} actions, undiscounted return '
-          f'{sum(rollout["rewards"]):.0f}, box at goal={rollout["success"]}. '
-          'Blue/orange arrows show the agent/box routes. The agent must reposition to '
-          'push around cliffs; distance to the goal alone is insufficient.', y, 'small')
-c.showPage()
+def header(page,title):
+    c.setFont('DejaVu-Bold',14.5);c.setFillColor(HexColor('#13334c'))
+    c.drawString(M,H-40,title)
+    c.setFont('DejaVu',8);c.setFillColor(HexColor('#5a6976'))
+    c.drawString(M,H-56,'AI6101 · YourName · YourMatriculationNumber')
+    c.setStrokeColor(HexColor('#b8cad8'));c.line(M,H-64,W-M,H-64)
+    c.setFont('DejaVu',7)
+    c.drawString(M,21,'Fixed map and 100-step limit · 3 seeds · Mandatory study + two bonus experiments')
+    c.drawRightString(W-M,21,f'{page} / 2')
+    events.append(dict(type='header',title=title))
+    return H-75
 
-y = header(2, 'Robustness and learned policy')
-y = block('4. Action-noise robustness', y, 'head', gap=2)
-y = image('robustness_heatmaps.png', y, width=480)
-y = block('<b>Figure 3.</b> Each cell uses 300 evaluation episodes per seed (900 total). '
-          'Entries are means ± sample SD across the three training seeds; SD is not a '
-          'confidence interval. Rows are training noise, columns test noise. No ε exploration '
-          'or learning is used in evaluation.', y, 'small')
-delta1 = 100*(success[1,1]-success[0,1])
-delta2 = 100*(success[1,2]-success[0,2])
-direction = 'improves' if delta1 > 0 else ('reduces' if delta1 < 0 else 'does not change')
-y = block(f'For clean training, success falls from {100*success[0,0]:.1f}% at test noise 0 '
-          f'to {100*success[0,1]:.1f}% at 0.1 and {100*success[0,2]:.1f}% at 0.2. '
-          'A single corrupted action near a cliff can terminate a long trajectory. '
-          f'Training at p=0.1 {direction} success at test p=0.1 by '
-          f'{abs(delta1):.1f} percentage points; the change at test p=0.2 is '
-          f'{delta2:+.1f} points. '
-          'This is a descriptive result under a fixed training budget, not evidence that '
-          'noise training universally helps. Larger training noise also increases unsafe '
-          'transitions and makes useful successful experience rarer. '
-          '<b>Neither noisy-training setting reached the goal in its 90,000 training '
-          'episodes across seeds; all their clean greedy evaluations timed out.</b> '
-          'This points to unsuccessful goal discovery under these settings, not a '
-          'successfully learned robust strategy.', y)
-y = block('5. Values, policy and scope', y, 'head', gap=2)
-y = image('value_policy_slices.png', y, width=480)
-y = block('<b>Figure 4.</b> Final clean-trained seed-7 table. Color is V(s)=max<sub>a</sub>Q(s,a) '
-          '(not divided by state count); arrows are unique greedy actions. Each panel '
-          'fixes the box and varies the agent position. Gray means unvisited and a dot '
-          'means a tie. The notebook also plots the entire joint-state table and lists the '
-          '20 highest-valued visited states. Unvisited actions can retain optimistic zeros.', y, 'small')
-y = block('<b>Limitations.</b> Three seeds provide limited precision. The four-coordinate '
-          'state omits time remaining, so the stationary table approximates the 100-step '
-          'finite-horizon task. Constant α and ε do not prove convergence or route optimality. '
-          'We retain failed runs and do not attempt the optional UCB/sparse-reward bonuses.', y, 'small')
-y = block('<b>References.</b> Watkins &amp; Dayan (1992), “Q-learning”, <i>Machine Learning</i> '
-          '8:279–292. Sutton &amp; Barto (2018), <i>Reinforcement Learning: An Introduction</i>, '
-          '2nd ed., §6.5. AI6101 assignment brief and supplied RLAgent_2026Fall.ipynb.', y, 'small', gap=0)
+y=header(1,'CliffBoxPushing: learning and robustness')
+y=block('1. Q-learning and the mandatory experiment',y,'head')
+y=block('The fixed 6×14 world uses state (agent row, column, box row, column), four actions, '
+        '7,056 Cartesian states and 28,224 Q entries. The original reward is '
+        '−1−Manhattan(A,B)−Manhattan(B,G), with −1000 for a cliff and +1000 at the goal. '
+        'Cliff, goal or 100 steps ends the episode. The original environment is unchanged.',y)
+y=block('<b>Update:</b> Q(s,a) ← Q(s,a)+α[r+γ(1−d)max<sub>b</sub>Q(s′,b)−Q(s,a)], '
+        'with α=0.1, γ=0.99, ε=0.1 and zero terminal bootstrap. Train 30,000 episodes '
+        'per noise level {0,0.1,0.2}, seeds {7,17,27}. Noise replaces the intended action '
+        'uniformly with one of the other three; update the intended action. Evaluate '
+        '300 episodes per policy/test noise with ε=0: 8,100 episodes. Success means box at goal.',y)
+y=image('learning_curves.png',y,width=500)
+y=block('<b>Figure 1.</b> Original-reward training: 500-episode rolling means, bands ±1 sample SD '
+        'across seeds. Clean greedy success is 100%; random actions achieve 0% in 1,000 episodes. '
+        'The seed-7 learned clean route takes 39 steps, return 577. Training retains ε exploration.',y,'small')
+y=block('2. Cross-noise generalization and final policy',y,'head',gap=2)
+y=image('robustness_heatmaps.png',y,width=455)
+y=block('<b>Figure 2.</b> Rows=train noise, columns=test noise; mean ± SD across three seeds '
+        '(900 episodes/cell). Clean-trained success drops to 48.2% and 18.6% at test noise 0.1/0.2. '
+        'Both noisy-training settings have zero goal visits in 90,000 training episodes each '
+        'and zero evaluation successes. Their clean tests all time out: noise training did '
+        'not improve robustness within this budget.',y,'small')
+y=image('report_policy_slices.png',y,width=500)
+y=block('<b>Figure 3.</b> Clean-trained seed-7 V(s)=max<sub>a</sub>Q(s,a), with greedy arrows '
+        'conditioned on both positions. Gray=unvisited, dot=tie, B=box, G=goal. The notebook '
+        'includes four slices and the complete joint-state table. Untried actions may retain optimistic zeros.',y,'small')
+c.showPage();events.append(dict(type='pagebreak'))
+
+y=header(2,'Exploration and pure sparse-reward bonuses')
+y=block('3. Bonus 1: exploration comparison',y,'head')
+y=block('Original rewards and primitive actions, no action noise; identical α, γ, 30,000-episode '
+        'budget and three seeds. Reuse the mandatory clean ε-greedy runs. UCB tries unvisited '
+        'actions first, then maximizes Q(s,a)+20√[ln(N(s)+1)/N(s,a)]. The bonus affects '
+        'selection only. The greedy baseline trains with ε=0; every learned policy is evaluated '
+        'without exploration for 300 episodes/seed.',y)
+exp_rows=[['Training method','First goal episode: seeds 7 / 17 / 27','Eval success','Mean return']]
+for j,method in enumerate(explore['methods']):
+    rows=[r for r in explore['rows'] if r['method']==method]
+    label={'epsilon_greedy':'ε-greedy (ε=0.1)','ucb':'UCB (c=20)','greedy':'Greedy (ε=0)'}[method]
+    exp_rows.append([label,' / '.join(str(r['first_success']) for r in rows),
+                     f"{100*exp_arrays['evaluation'][:,j,0].mean():.1f}%",
+                     f"{exp_arrays['evaluation'][:,j,1].mean():.1f}"])
+y=table(exp_rows,y,[120,205,90,WIDTH-415])
+y=block('UCB discovers a goal earlier than ε-greedy (median 5,106 vs 8,038 episodes), '
+        'but greedy is earlier still (4,735). Negative step rewards make untried zero Q-values '
+        'optimistic, and random ties provide exploration even with ε=0. All reach 100% final '
+        'clean success; these results do not establish a universal UCB advantage.',y,'small')
+y=block('4. Bonus 2: only goal reward, hierarchical Q-learning',y,'head')
+y=block('<b>Reward is exactly 1000 at the original goal, otherwise 0</b>, including cliffs and '
+        'timeout. No dense pretraining, intermediate reward or demonstration is used. '
+        'Hand-designed options use local BFS to position the agent safely, then make one safe '
+        'push. This map/safety prior does not plan the full box route or use goal distance. '
+        'The high-level push choice is learned. Every primitive action executes the original '
+        'step() and counts toward 100; dead ends continue safely until the original timeout.',y)
+y=block('For an option lasting k steps, the target is '
+        'Σ<sub>i=0</sub><super>k−1</super> γ<super>i</super>r<sub>i</sub> '
+        '+(1−d)γ<super>k</super>max<sub>o</sub>Q(s′,o). The replay method performs 10 backward '
+        'passes over actual successful trajectories. All four ablations train 5,000 episodes/seed '
+        'and evaluate 300 episodes/seed; random options remain random in evaluation.',y)
+sp_rows=[['Sparse training method','First goal: seeds 7 / 17 / 27','Eval success','Mean steps']]
+for j,method in enumerate(sparse['methods']):
+    rows=[r for r in sparse['rows'] if r['method']==method]
+    label={'primitive_epsilon':'Primitive ε-greedy','random_options':'Random safe options',
+           'option_q':'Option Q, no replay','option_q_replay':'Option Q + replay ×10'}[method]
+    first=' / '.join('none' if r['first_success'] is None else str(r['first_success']) for r in rows)
+    sp_rows.append([label,first,f"{100*sparse_arrays['evaluation'][:,j,0].mean():.1f}%",
+                    f"{sparse_arrays['evaluation'][:,j,2].mean():.1f}"])
+y=table(sp_rows,y,[135,190,90,WIDTH-415])
+y=block('Only the replay learner reaches 100% final success (900/900; sparse return 1000). '
+        'No-replay learns the same first goals but fails final tests: replay improves propagation, '
+        'not first discovery. Equal episode caps do not imply equal interactions or compute; '
+        'the notebook records both, including extra replay updates.',y,'small')
+y=image('bonus_learning_curves.png',y,width=500)
+y=block('<b>Figure 4.</b> Goal-reaching training rates: exploration comparison (500-episode '
+        'window) and sparse ablations (100-episode window); mean ± SD across three seeds.',y,'small')
+y=block('<b>Scope.</b> Three seeds limit precision. Constant α/ε and the four-coordinate '
+        'state (without time remaining) do not prove convergence or optimality. Sparse skills '
+        'supply substantial map knowledge; the ablations explicitly isolate their contribution. '
+        '<b>References:</b> Watkins &amp; Dayan (1992), Q-learning; Auer et al. (2002), '
+        'Finite-time Analysis of the Multiarmed Bandit Problem; Sutton, Precup &amp; Singh '
+        '(1999), Between MDPs and semi-MDPs; supplied AI6101 brief/environment.',y,'small',gap=0)
 c.save()
-print(path)
-print(f'Final page content bottom: {y:.1f} pt')
+(RESULTS/'report_content.json').write_text(json.dumps(dict(events=events,styles={
+    name:dict(font_size=style.fontSize,leading=style.leading) for name,style in styles.items()}),indent=2))
+print(path);print(f'Page 2 content bottom: {y:.1f} pt')
