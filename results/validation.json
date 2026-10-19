@@ -20,5 +20,8 @@
   "mandatory_training_episodes": 270000,
   "word_report_rendered_pages": 2,
   "mandatory_evaluation_episodes": 8100,
-  "new_bonus_evaluation_episodes": 5400
+  "new_bonus_evaluation_episodes": 5400,
+  "word_report_font": "Times New Roman",
+  "word_font_verification": "All four script slots verified in body, styles and footer; no theme overrides.",
+  "word_pagination_renderer_font": "Liberation Serif (metric-compatible substitution; DOCX specifies Times New Roman)"
 }

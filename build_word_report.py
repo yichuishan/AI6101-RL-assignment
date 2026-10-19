@@ -10,13 +10,32 @@ from docx.oxml.ns import qn
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
 
 ROOT=Path(__file__).resolve().parent
+REPORT_FONT='Times New Roman'
 content=json.loads((ROOT/'results/report_content.json').read_text())
 doc=Document();section=doc.sections[0]
 section.page_width,section.page_height=Mm(210),Mm(297)
 section.top_margin=Pt(32);section.bottom_margin=Pt(34)
 section.left_margin=section.right_margin=Pt(38)
 section.footer_distance=Pt(14)
-normal=doc.styles['Normal'];normal.font.name='DejaVu Sans';normal.font.size=Pt(8.3)
+def set_report_font(font):
+    """Set all Word script slots explicitly, removing theme-font overrides."""
+    font.name=REPORT_FONT
+    rfonts=font._element.get_or_add_rPr().get_or_add_rFonts()
+    for slot in ['ascii','hAnsi','eastAsia','cs']:
+        rfonts.set(qn('w:'+slot),REPORT_FONT)
+    for key in list(rfonts.attrib):
+        if key.endswith('Theme'):
+            del rfonts.attrib[key]
+
+for style in doc.styles:
+    if hasattr(style,'font'):
+        set_report_font(style.font)
+# Document defaults are outside the named style collection.
+for fonts in doc.styles.element.iter(qn('w:rFonts')):
+    fonts.attrib.clear()
+    for slot in ['ascii','hAnsi','eastAsia','cs']:
+        fonts.set(qn('w:'+slot),REPORT_FONT)
+normal=doc.styles['Normal'];normal.font.size=Pt(8.3)
 normal.font.color.rgb=RGBColor.from_string('233341')
 normal.paragraph_format.line_spacing=Pt(11.1)
 normal.paragraph_format.space_after=Pt(5)
@@ -102,5 +121,18 @@ for text in ['PAGE',' / ','NUMPAGES']:
         r._r.extend([begin,instr,end])
 doc.core_properties.title='CliffBoxPushing: Q-learning, Exploration and Sparse Rewards'
 doc.core_properties.author='YourName — YourMatriculationNumber'
+# Explicit run fonts include the title, captions, editable tables and page fields.
+for part in [doc.part,*[section.header.part for section in doc.sections],
+             *[section.footer.part for section in doc.sections]]:
+    for run in part.element.iter(qn('w:r')):
+        rpr=run.find(qn('w:rPr'))
+        if rpr is None:
+            rpr=OxmlElement('w:rPr');run.insert(0,rpr)
+        fonts=rpr.find(qn('w:rFonts'))
+        if fonts is None:
+            fonts=OxmlElement('w:rFonts');rpr.insert(0,fonts)
+        fonts.attrib.clear()
+        for slot in ['ascii','hAnsi','eastAsia','cs']:
+            fonts.set(qn('w:'+slot),REPORT_FONT)
 path=ROOT/'deliverables/AI6101_Report_YourName_YourMatriculationNumber.docx'
 doc.save(path);print(path)

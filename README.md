@@ -91,4 +91,7 @@ python package_deliverables.py
 ```
 
 Word generation additionally uses `python-docx` from `requirements-report.txt`.
+The Word report explicitly uses Times New Roman for its title, body, captions,
+editable tables and footer, with theme-font overrides removed. Its layout has
+been checked to remain two pages. Chart lettering is retained inside the figures.
 The automated test suite now has 13 tests covering the mandatory and bonus methods.
