@@ -214,7 +214,7 @@ python -m rl_assignment.experiments
 python -m rl_assignment.bonus
 ```
 
-更直接的使用方式是在 Jupyter 中打开提交 Notebook，选择 AI6101 内核后按顺序 Run All。它不依赖源码目录，输出会写到当前工作目录的 `results/`。必做实验是九个策略、每个 30,000 回合。第 7、8 节在结果文件存在时复用已完成的加分实验，设置 `RECOMPUTE_BONUS=True` 可强制重新训练；单独下载 Notebook、没有结果文件时会自动训练。修改算法或参数后，应删除缓存或强制重跑。如果只是阅读，查看已经保存的输出即可。
+更直接的使用方式是在 Jupyter 中打开提交 Notebook，选择 AI6101 内核后按顺序 Run All。它不依赖源码目录，输出会写到当前工作目录的 `results/`。必做实验是九个策略、每个 30,000 回合。第 6、7 节在结果文件存在时复用已完成的加分实验，设置 `RECOMPUTE_BONUS=True` 可强制重新训练；单独下载 Notebook、没有结果文件时会自动训练。修改算法或参数后，应删除缓存或强制重跑。如果只是阅读，查看已经保存的输出即可。
 
 更换机器时，可安装 `requirements.txt` 中固定版本的 NumPy、Matplotlib、JupyterLab、ipykernel 与 pytest。生成 PDF 还需要 `requirements-report.txt`；这与运行强化学习 Notebook 是两组用途不同的依赖。
 
@@ -248,7 +248,7 @@ for method in sp['methods']:
     first=' / '.join('未成功' if r['first_success'] is None else str(r['first_success']) for r in rows)
     sp_table.append(f"| {method} | {first} | {np.mean([r['eval_success'] for r in rows]):.1%} | {np.mean([r['eval_return'] for r in rows]):.1f} | {np.mean([r['eval_steps'] for r in rows]):.1f} |")
     cost_table.append(f"| {method} | {np.mean([r['total_interactions'] for r in rows]):,.0f} | {np.mean([r['replay_updates'] for r in rows]):,.0f} |")
-bonus=r'''## 新增第 7 节：探索策略比较（第一个加分任务）
+bonus=r'''## 新增第 6 节：探索策略比较（第一个加分任务）
 
 对照为默认 ε-greedy、UCB、训练阶段 ε=0 的贪心策略。均使用原始奖励、原始动作、不加动作噪声；学习率 0.1、折扣 0.99、每种策略训练 30,000 回合，种子 7/17/27。ε-greedy 复用必做实验中完全相同的干净训练结果。每种策略每个种子评估 300 回合，关闭全部探索加成。
 
@@ -258,7 +258,7 @@ EX_TABLE
 
 首次成功中位回合数为 **8,038、5,106、4,735**。UCB 早于 ε-greedy，却没有超过贪心对照；三者最终均达到 100% 干净测试成功率。原始负逐步奖励使全零初始化具有乐观性：未尝试动作的零值可能高于已尝试动作的负值；随机平局选择也提供探索。所以“ε=0”不等于“没有任何探索行为”，本实验不支持 UCB 普遍优胜的结论。
 
-## 新增第 8 节：纯稀疏奖励与层次化学习（第二个加分任务）
+## 新增第 7 节：纯稀疏奖励与层次化学习（第二个加分任务）
 
 只使用 **箱子到达原目标奖励 1000，否则 0**。丢弃原始密集奖励；距离变化、掉崖、超时均不额外加减分。地图、初始位置和每回合 100 个原始动作的上限不变，没有密集预训练、示范、内在奖励或目标重标注。
 

@@ -16,20 +16,10 @@ def md(text):
 def code(text):
     cells.append(nbf.v4.new_code_cell(text))
 
-md('''# AI6101 — Q-learning for CliffBoxPushing
+md(r'''# AI6101 — Q-learning for CliffBoxPushing
 **Name:** YourName · **Matriculation number:** YourMatriculationNumber
 
-This notebook is self-contained: run all cells in order. It completes the RLAgent,
-value/policy visualization, action-noise evaluation, and both optional bonus tasks.
-Sections 7 and 8 add UCB/greedy exploration comparisons and a strictly sparse-reward
-hierarchical learner with ablations. The supplied environment below is unchanged.
-The mandatory experiment trains **9 independent policies** (3 training
-noise levels × 3 seeds), for **30,000 episodes each**, then evaluates every policy for
-**300 episodes at each test noise**. Expect a few minutes on a CPU; no GPU is required.
-
-Dependencies: Python 3.12, NumPy 2.5.4, Matplotlib 3.11.2, IPython and ipykernel.
-All results are computed, not manually entered. The optional GIF uses Pillow.
-The companion PDF is exactly two pages; the extended explanation is separate.''')
+This project trains a tabular Q-learning agent to push the box to the goal. The experiments examine learning progress, the learned value function and policy, action-noise robustness, exploration strategies, and hierarchical learning with sparse rewards.''')
 code('''from pathlib import Path
 import copy
 import numpy as np
@@ -40,39 +30,34 @@ from IPython.display import display, Image
 OUTPUT_DIR = Path('results')
 OUTPUT_DIR.mkdir(exist_ok=True)
 ''')
-md(r'''## 1. Original environment and MDP
-Coordinates use `(row, column)`. State is `(agent_row, agent_col, box_row, box_col)`;
-actions 1–4 mean up, down, left and right. There are $84^2=7,056$ Cartesian states
-and $28,224$ table entries, including unreachable/terminal states.
+md(r'''## 1. Grid World and State Representation
+The environment contains 6 rows and 14 columns. The agent starts at `(4,1)`, the box at `(1,1)`, and the goal is `(4,13)`. Actions 1–4 correspond to up, down, left, and right.
 
-The unchanged reward after a transition is
-$r=-1-d_1(A,B)-d_1(B,G)-1000\,\mathbb{1}_{cliff}+1000\,\mathbb{1}_{goal}$.
-An episode ends at a cliff, the goal, or 100 steps. The supplied implementation,
-including its special hard boundary for the box, is authoritative.''')
+Each state contains both positions:
+
+$$s=(a_r,a_c,b_r,b_c).$$
+
+The Q-table contains $84^2=7,056$ Cartesian states and four actions per state, giving 28,224 entries.
+
+After each transition, the original reward is
+
+$$r=-1-d_1(A,B)-d_1(B,G)-1000\mathbb{1}_{\mathrm{cliff}}+1000\mathbb{1}_{\mathrm{goal}},$$
+
+where $d_1$ is Manhattan distance. An episode ends when the agent or box enters a cliff, the box reaches the goal, or 100 primitive steps have been executed. The box is restricted to rows 1–4 and columns 1–13; the agent can use the outer rows and columns to reposition.''')
 code((source / 'environment.py').read_text())
-md(r'''## 2. Q-learning and action noise
-The training policy is ε-greedy with ε=0.1 and uniform random greedy tie-breaking.
-With α=0.1 and γ=0.99, update the **intended** action $a$:
+md(r'''## 2. Q-learning and Action Noise
+Q-values are initialized to zero. Training uses ε-greedy action selection with ε=0.1, learning rate α=0.1, and discount factor γ=0.99. Ties between maximizing actions are resolved uniformly at random.
 
-$$Q(s,a)\leftarrow Q(s,a)+\alpha\left[r+\gamma(1-d)\max_bQ(s',b)-Q(s,a)\right].$$
+The update is
 
-Here $d$ is the environment's terminal flag (including the time limit). We use zero
-bootstrap at termination. Noise belongs to the transition channel: with probability
-$p$ execute a uniformly sampled action from the **other three**; otherwise execute $a$.
-Updating the corrupted action instead would learn a different decision problem.
+$$Q(s,a)\leftarrow Q(s,a)+\alpha\left[r+\gamma(1-d)\max_bQ(s',b)-Q(s,a)\right],$$
 
-During evaluation ε exploration is disabled, no Q-values change, and only $p_{test}$
-noise remains. A separate seeded generator keeps evaluation from consuming the
-training generator's random stream. Success means **box at goal**, not positive return.
+where $d$ is the terminal flag. Terminal transitions use the immediate reward as the target.
 
-The four-coordinate state follows the template; it omits remaining time. Thus the
-stationary Q-table approximates the capped task rather than an exact time-augmented
-finite-horizon MDP. Fixed learning/exploration rates do not establish convergence.''')
+With probability $p$, the selected action is replaced uniformly by one of the other three actions. The environment executes the resulting action, and Q-learning updates the entry for the intended action. This learns the expected outcome of sending each action through the noisy transition channel.
+
+Evaluation uses greedy action selection, fixed Q-values, and the specified test noise. Success is recorded when the box reaches the goal.''')
 code(code_file('agent.py'))
-md('''### Small correctness checks
-These assertions check the terminal mask and exact noise definition. The repository's
-pytest tests additionally cover nonterminal targets, uniform noise frequencies,
-intended-action credit, evaluation isolation, success detection and original dynamics.''')
 code('''check_agent = RLAgent(CliffBoxGridWorld(), 0, alpha=0.5, gamma=0.9)
 s, next_s = (4, 1, 1, 1), (3, 1, 1, 1)
 check_agent.q_table[next_s][1] = 10
@@ -84,16 +69,12 @@ rng_check = np.random.default_rng(99)
 assert all(apply_action_noise(1, [1,2,3,4], 1, rng_check) != 1 for _ in range(500))
 assert all(apply_action_noise(1, [1,2,3,4], 0, rng_check) == 1 for _ in range(100))
 print('Notebook correctness checks passed.')''')
-md('''## 3. Reproducible experiment
-Train noise levels are 0, 0.1, 0.2 with independent seeds 7, 17, 27. All use the same
-hyperparameters and 30,000 episodes; there is no reward shaping, action masking,
-planning, or map modification. For each trained policy, run 300 episodes for each
-test noise: **8,100 evaluation episodes**, plus 1,000 uniform-random baseline episodes.
-The seed-7 policies are saved for visualization; they are not selected by evaluation.
+md(r'''## 3. Experimental Setup
+Agents are trained with action-noise levels $p_{\mathrm{train}}\in\{0,0.1,0.2\}$ and random seeds 7, 17, and 27. Each policy receives 30,000 training episodes with the same Q-learning parameters and original reward function.
 
-Curves use a 500-episode moving average; shading and matrix ± values are sample SD
-across the three training seeds, not confidence intervals. Each matrix cell pools
-900 evaluation episodes. Raw episode records and per-seed CSV results are saved.''')
+Each trained policy is evaluated for 300 episodes at every test-noise level $p_{\mathrm{test}}\in\{0,0.1,0.2\}$. This gives 8,100 evaluation episodes, with 900 episodes contributing to each train/test-noise matrix cell. A uniform-random baseline is evaluated for 1,000 episodes.
+
+Training curves use 500-episode moving averages. Lines show the mean across three seeds, and shaded bands show one sample standard deviation. The evaluation matrices report the mean and sample standard deviation across the three trained policies.''')
 code(code_file('experiments.py'))
 code('''study = run_study(output_dir=OUTPUT_DIR, episodes=30000,
                   eval_episodes=300, seeds=(7,17,27))
@@ -102,26 +83,25 @@ agent = trained_agents[0.0]
 noise_levels = [0.0, 0.1, 0.2]
 success_rate = study['arrays']['success'].mean(axis=0)
 average_return = study['arrays']['mean_return'].mean(axis=0)''')
-md(r'''## 4. Learning, robustness, final V-table and policy
-$V(s)=\max_a Q(s,a)$ is an estimate of the discounted greedy action value; do not
-divide it by the number of states. The policy contains all maximizing actions.
-Policy arrows depend on **both agent and box** positions. Four slices fix the box
-at distinct stages of a successful route; the all-state plots cover the full
-agent-index × box-index Cartesian table. Gray means unvisited, not zero value or
-safe terrain. A dot denotes a tie. Some visited states still have untried actions
-at optimistic zero initialization, so these plots are not a claim of global convergence.''')
+md(r'''## 4. State Values and Learned Policy
+The state-value estimate and greedy policy are obtained from the Q-table:
+
+$$V(s)=\max_aQ(s,a),\qquad \pi(s)\in\arg\max_aQ(s,a).$$
+
+Four policy slices fix the box at `(1,1)`, `(4,5)`, `(1,10)`, and `(2,13)` while varying the agent position. Colors show state values, arrows show unique greedy actions, dots show tied actions, and gray cells show unvisited states. B marks the box and G marks the goal.
+
+The complete joint-state plots use agent and box indices defined by $14\times\mathrm{row}+\mathrm{column}$. The highest-valued visited states and their greedy actions are also listed.''')
 code(code_file('plotting.py'))
 code('''figures = make_figures(study, OUTPUT_DIR, animation=True)
 for figure in figures:
     display(figure)
     plt.close(figure)''')
-md('''## 5. Numerical interpretation and a complete greedy trajectory
-The noisy environment can terminate a long safe trajectory after a single action
-substitution. High clean success therefore need not imply high noisy success.
-Training success includes ε exploration as well as noise; evaluation removes ε,
-so the two rates measure different policies. Compare a given **column** when
-assessing whether training noise helps at a fixed test noise. Three seeds support
-a descriptive comparison, not a broad statistical guarantee.''')
+md(r'''## 5. Action-Noise Results and Greedy Trajectory
+Clean-trained policies achieve 100% success without test noise. Their success rates decrease to 48.22% at test noise 0.1 and 18.56% at test noise 0.2. Action substitutions near cliffs interrupt trajectories that succeed under deterministic execution.
+
+Agents trained with noise 0.1 and 0.2 record no goal visits across 90,000 training episodes per setting and achieve zero success across the three test-noise levels. Their noise-free greedy evaluations end in timeout. Successful goal-reaching behavior did not emerge under these training settings.
+
+Training success includes ε exploration and action noise, while evaluation removes ε exploration. The seed-7 clean-trained greedy policy completes the task in 39 primitive steps with an undiscounted return of 577. The following trajectory and animation show its actions, states, and rewards.''')
 code('''print('Success mean ± SD (%):')
 print(np.round(100 * success_rate, 2))
 print(np.round(100 * study['arrays']['success'].std(axis=0, ddof=1), 2))
@@ -138,45 +118,15 @@ print(' t | state (agent row,col, box row,col) | action | reward')
 for t, (state, action, reward) in enumerate(zip(rollout['states'], rollout['actions'], rollout['rewards'])):
     print(f'{t:2d} | {str(state):34s} | {action:6d} | {reward:6.0f}')
 display(Image(filename=str(OUTPUT_DIR / 'greedy_rollout.gif'), format='gif'))''')
-md('''### Findings from the recorded experiment
-Clean-trained policies achieve 100% clean-test success, 48.22% at test noise 0.1 and
-18.56% at 0.2 (means across three seeds). Both noisy-training settings have zero
-successes across all three test noises. Each noisy-training setting also has zero
-goal visits in its 90,000 training episodes across seeds; all clean greedy evaluations
-of those policies time out. This is consistent with failure to discover successful
-experience under the chosen training budget and fixed exploration rate. It does not
-establish that noisy training is always ineffective. These are recorded-run observations,
-not values used by the implementation. The matrices and figures above are computed
-directly by the code.''')
-md('''## 6. Limitations and reproducibility
-The deterministic clean task can give identical greedy outcomes across hundreds of
-evaluation episodes. Those repetitions do not demonstrate independent training
-reliability; the three independent training seeds address that separately. No claim
-is made that the learned route is shortest or globally optimal. Failure under noise
-is retained and discussed rather than discarded. The two bonus studies below are
-separate from the mandatory original-reward noise study.
 
-References: Watkins & Dayan (1992), *Q-learning*, Machine Learning 8, 279–292;
-Sutton & Barto (2018), *Reinforcement Learning: An Introduction*, 2nd ed., §6.5;
-AI6101 assignment brief and supplied `RLAgent_2026Fall.ipynb` environment.''')
+md(r'''## 6. Comparison of Exploration Strategies
+The exploration study compares ε-greedy training with ε=0.1, UCB action selection, and greedy training with ε=0. All methods use the original reward, primitive actions, zero action noise, α=0.1, γ=0.99, and 30,000 training episodes per seed. The clean ε-greedy runs from the preceding experiment provide the ε-greedy results. Each policy is evaluated for 300 episodes per seed with exploration disabled.
 
-md(r'''## 7. Bonus 1 — UCB versus ε-greedy and no exploration
-All three methods use the **original dense reward**, the original primitive action
-space and no action noise. Train 30,000 episodes per policy with α=0.1, γ=0.99,
-seeds 7/17/27, and evaluate 300 episodes per seed with all exploration disabled.
-The mandatory clean ε-greedy runs are reused exactly rather than trained again.
-The no-exploration baseline **trains** with ε=0; it is distinct from simply turning
-exploration off at evaluation. Random tie-breaking is shared by all methods.
+UCB first selects actions that have not been tried in the current state. Once all actions have been sampled, it maximizes
 
-UCB selects untried actions first, then maximizes
-$Q(s,a)+20\sqrt{\ln(N(s)+1)/N(s,a)}$. The coefficient 20 is fixed in raw reward units;
-no claim of a calibrated statistical confidence interval is made for bootstrapped Q.
-The UCB term affects action selection only, never the reward or TD target.
+$$Q(s,a)+20\sqrt{\frac{\ln(N(s)+1)}{N(s,a)}},$$
 
-Recorded bonus artifacts can be reused to read results quickly. Set
-`RECOMPUTE_BONUS=True` to retrain; when the notebook is downloaded alone and no
-artifacts exist, the experiments run automatically. Delete cached files after changing
-algorithm code or hyperparameters. The final PDF uses these same measured records.''')
+where $N(s,a)$ counts selections of action $a$ in state $s$, and $N(s)=\sum_aN(s,a)$. The exploration term is used for action selection; Q-values are updated using the original Q-learning target. All three strategies use random tie-breaking.''')
 bonus_source = code_file('bonus.py')
 exploration_source, sparse_source = bonus_source.split('def sparse_reward(env):', 1)
 code(exploration_source)
@@ -201,32 +151,18 @@ for j, method in enumerate(exploration_bonus['summary']['methods']):
     print(f"{method}: greedy success {ev[:,j,0].mean():.1%} "
           f"± {ev[:,j,0].std(ddof=1):.1%} across seeds")''')
 
-md(r'''## 8. Bonus 2 — strictly sparse rewards with push options and replay
-For this experiment alone, discard the reward returned by `env.step()` and use
-**1000 only when the box reaches the original goal, otherwise 0**. This includes
-zero for walking, distance changes, cliffs and timeout. The map, fixed initial state,
-100-primitive-step limit and transition implementation remain unchanged. There is
-no dense pretraining, expert demonstration, intrinsic reward or reward relabeling.
+md(r'''## 7. Sparse-Reward Learning with Push Options and Replay
+The sparse experiment uses reward 1000 when the box reaches the original goal and 0 for every other transition. The map, initial positions, transition rules, and 100-primitive-step episode limit are retained.
 
-Plain sparse ε-greedy Q-learning is the baseline. Our hierarchical method uses
-**hand-designed safe push skills**: local BFS moves the agent to the required side
-of the box, then executes one safe push. It knows the map and box boundary rules;
-this is a substantial skill/safety prior and is disclosed explicitly. It does not
-plan a box-to-goal route or rank positions by goal distance. The learned high-level
-policy chooses the next push direction. Every low-level step goes through the
-original `step()` and counts against the same 100-step cap. Unpushable states are
-walked safely until the original timeout; episodes are not reset early.
+The hierarchical learner uses hand-designed safe-push options. For each feasible push direction, local BFS finds a safe path that positions the agent on the required side of the box, followed by one push. The options use the map and box-boundary rules, while the high-level Q-table learns which push direction to select. Every primitive action is executed through the environment and counted toward the episode limit. In states with no feasible push, the agent walks safely until timeout.
 
-For an option lasting $k$ primitive steps, use the semi-Markov target
-$\sum_{i=0}^{k-1}\gamma^i r_i + (1-d)\gamma^k\max_o Q(s',o)$.
-The replay variant makes 10 backward passes over a **genuinely successful** option
-trajectory. Replay has extra computation, which is counted separately; it creates
-no new environment experience. The random-options ablation has the identical skills
-but does not learn, isolating the skill prior from learning. The no-replay ablation
-isolates replay. Four methods × three seeds × 5,000 episodes; evaluation uses 300
-episodes per method/seed with exploration off (random options remain random by definition).
-Equal episode/horizon caps do not imply equal interaction/update counts; those are
-reported. Under this reward, mean undiscounted return must equal 1000 × success rate.''')
+For an option lasting $k$ primitive steps, the semi-Markov Q-learning target is
+
+$$y=\sum_{i=0}^{k-1}\gamma^ir_i+(1-d)\gamma^k\max_oQ(s',o).$$
+
+The replay variant performs 10 backward update passes over the option transitions of each successful training episode.
+
+Four methods are compared: primitive ε-greedy Q-learning, random selection of safe-push options, option Q-learning, and option Q-learning with successful-trajectory replay. Each method trains for 5,000 episodes using seeds 7, 17, and 27, followed by 300 evaluation episodes per seed. Learned policies are evaluated greedily; the random-options baseline continues to select options uniformly. Environment interactions and replay updates are recorded for each method.''')
 code('def sparse_reward(env):'+sparse_source)
 code('''sparse_files = [OUTPUT_DIR/'bonus_sparse.npz', OUTPUT_DIR/'bonus_sparse.json',
                 OUTPUT_DIR/'bonus_sparse_rollout.json']
@@ -259,30 +195,12 @@ assert set(sparse_bonus['rollout']['rewards']) <= {0.,1000.}
 assert len(sparse_bonus['rollout']['actions']) <= 100
 print('Sparse reward and primitive-step horizon checks passed.')''')
 
-md('''### Bonus interpretation
-Recorded results: all three exploration methods reach 100% final clean success;
-median first-goal episodes are 8,038 (ε-greedy), 5,106 (UCB) and 4,735 (greedy).
-Thus UCB helps discovery relative to ε-greedy here, but does not beat greedy.
-In sparse learning only option Q with replay achieves 100% evaluation success
-(900/900). Primitive ε-greedy, random options and option Q without replay each
-record zero evaluation successes. The two learned option variants discover their
-first goals at the same episodes (1,155 / 3,454 / 2,394), showing that replay helps
-propagate observed success rather than create the first one. These statements
-describe the saved run; rerunning changed settings can give different results.
+md(r'''## 8. Discussion of Experimental Results
+All three exploration strategies achieved 100% final success under noise-free evaluation. The median first-success episodes were 8,038 for ε-greedy, 5,106 for UCB, and 4,735 for greedy training. UCB accelerated goal discovery relative to ε-greedy, while greedy training discovered successful trajectories earliest. Optimistic zero initialization and random tie-breaking provided exploration even with ε=0: negative updates made previously untried actions more attractive than actions already associated with negative returns.
 
-Read first-goal episode and the learning curves as well as final success. A greedy
-baseline can still explore through optimistic zero initialization and random ties;
-ε=0 does not mean every run follows one fixed path. UCB can change discovery speed
-without increasing final performance. Its coefficient depends on reward scale.
+Under purely sparse rewards, primitive Q-learning, random safe options, and option Q-learning without replay each achieved 0% final evaluation success. Option Q-learning with successful-trajectory replay achieved 100% success across three training seeds, completing all 900 evaluation episodes. The resulting policies required an average of 42.3 primitive steps and obtained an undiscounted return of 1000 per episode.
 
-For the sparse study, compare random options against learned options to see whether
-success comes only from the skill prior, then compare learned options with/without
-replay to assess reward propagation. The first successful trajectory cannot be caused
-by success replay: no replay occurs before that event. Report these ablations rather
-than attributing all improvement to Q-learning. Results use only three seeds and do
-not prove universal superiority or global optimality. References for these additions:
-Auer et al. (2002), *Finite-time Analysis of the Multiarmed Bandit Problem*;
-Sutton, Precup & Singh (1999), *Between MDPs and semi-MDPs*.''')
+The learned option variants discovered their first successful trajectories at the same episodes—1,155, 3,454, and 2,394—with and without replay. Their subsequent performance differed substantially. Backward replay propagated the terminal reward through the successful option sequence, allowing the learner to retain and repeatedly execute effective behavior. Safe-push options supplied structured exploration, and replay made successful experience more effective for learning. Together, these components produced reliable performance while retaining the original map, initial state, 100-step limit, and strictly 0/1000 reward scheme.''')
 
 notebook = nbf.v4.new_notebook(cells=cells, metadata={
     'kernelspec': {'display_name': 'Python (AI6101 RL)', 'language': 'python', 'name': 'ai6101'},

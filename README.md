@@ -50,7 +50,7 @@ are separate from the notebook runtime dependencies.
 
 ## Both bonus tasks
 
-Notebook sections **7** and **8** implement and evaluate both optional tasks:
+Notebook sections **6** and **7** implement and evaluate both optional tasks:
 
 - **Exploration:** original-reward epsilon-greedy, UCB (c=20), and epsilon=0
   training, 30,000 episodes with seeds 7/17/27. The clean epsilon runs are reused
